@@ -1,13 +1,5 @@
-# Sample Hardhat Project
+# Meta Transaction Example
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.
-
-Try running some of the following tasks:
-
-```shell
-npx hardhat help
-npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat ignition deploy ./ignition/modules/Lock.ts
-```
+1. Spin up Anvil with `anvil -a 10`.
+2. Deploy the contracts using `npx hardhat run scripts/deploy.ts --network localhost`
+3. Run Rust with `cargo run`.
