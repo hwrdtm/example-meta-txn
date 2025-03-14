@@ -21,6 +21,8 @@ import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 contract Forwarder is EIP712 {
     using ECDSA for bytes32;
 
+    error SignatureDoesNotMatch();
+
     struct ForwardRequest {
         address from;
         address to;
@@ -70,7 +72,7 @@ contract Forwarder is EIP712 {
     ) public payable returns (bool, bytes memory) {
         require(
             verify(req, signature),
-            "MinimalForwarder: signature does not match request"
+            SignatureDoesNotMatch()
         );
         _nonces[req.from] = req.nonce + 1;
 

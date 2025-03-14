@@ -4,21 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+alloy = { version = "0.12.5", features = ["full", "dyn-abi", "eip712"] }
 ethers = { version = "2.0", features = ["abigen"] }
 tokio = { version = "1.0", features = ["full"] }
 eyre = "0.6"
-
-[[bin]]
-name = "direct"
-path = "src/direct.rs"
-
-[[bin]]
-name = "meta"
-path = "src/meta.rs"
-
-[[bin]]
-name = "meta-middleware"
-path = "src/meta_middleware.rs"
+serde = "*"
 
 [workspace]
 members = ["."]

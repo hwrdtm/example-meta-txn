@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
     let client = Arc::new(client);
 
     // Contract address - replace with your deployed contract address
-    let contract_address = "0x5FbDB2315678afecb367f032d93F642f64180aa3".parse::<Address>()?;
+    let contract_address = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512".parse::<Address>()?;
     let contract = CounterByAddress::new(contract_address, client.clone());
 
     // Send the increment transaction
