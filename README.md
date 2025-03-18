@@ -5,4 +5,5 @@
 3. Run Rust using the corresponding command for the use case:
   - Direction transaction: `cargo run --example direct`
   - Meta transaction: `cargo run --example meta`
-  - Meta transaction with Ethers middleware: `cargo run --example meta-middleware`
+  - Meta transaction with custom Ethers middleware: `cargo run --example meta_middleware`
+  - Meta transaction with Ethers TransformerMiddleware (incomplete): `cargo run --example meta_middleware_v2`
