@@ -70,10 +70,17 @@ contract Forwarder is EIP712 {
         ForwardRequest calldata req,
         bytes calldata signature
     ) public payable returns (bool, bytes memory) {
+        // Check signature
         require(
             verify(req, signature),
             SignatureDoesNotMatch()
         );
+        // Check that the nonce is strictly increasing to prevent replay attacks
+        require(
+            _nonces[req.from] <= req.nonce,
+            "Nonce is not strictly increasing"
+        );
+        // Increment the nonce
         _nonces[req.from] = req.nonce + 1;
 
         // solhint-disable-next-line avoid-low-level-calls

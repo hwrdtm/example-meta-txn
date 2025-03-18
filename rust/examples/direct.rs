@@ -16,14 +16,15 @@ abigen!(
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load private key from environment variable
-    let private_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string();
+    let private_key =
+        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string();
     let wallet = private_key.parse::<LocalWallet>()?;
-    
+
     // Connect to the network (using local hardhat node by default)
     let provider = Provider::<Http>::try_from("http://localhost:8545")?;
     let chain_id = provider.get_chainid().await?;
     let wallet = wallet.with_chain_id(chain_id.as_u64());
-    
+
     // Create a client
     let client = SignerMiddleware::new(provider, wallet);
     let client = Arc::new(client);
@@ -36,7 +37,7 @@ async fn main() -> Result<()> {
     println!("Sending increment transaction...");
     let fn_call = contract.increment();
     let tx = fn_call.send().await?;
-    
+
     println!("Transaction sent! Waiting for confirmation...");
     let receipt = tx.await?;
     println!("Transaction confirmed: {:?}", receipt);
