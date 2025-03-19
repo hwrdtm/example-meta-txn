@@ -83,7 +83,34 @@ mod middleware {
     #[derive(Error, Debug)]
     pub enum EIP2771GasRelayerMiddlewareError<M: Middleware> {
         #[error("{0}")]
+        SignerError(String),
+
+        #[error("{0}")]
         MiddlewareError(M::Error),
+
+        #[error("{0}")]
+        ContractRevert(String),
+
+        #[error("Failed to get nonce")]
+        FailedToGetNonce(String),
+
+        #[error("Failed to estimate gas")]
+        FailedToEstimateGas(String),
+
+        #[error("Missing chain ID")]
+        MissingChainID,
+
+        #[error("Missing to address")]
+        MissingToAddress,
+
+        #[error("Missing data")]
+        MissingData,
+
+        #[error("Conversion error")]
+        ConversionError(String),
+
+        #[error("Unsupported transaction type")]
+        UnsupportedTransactionType,
     }
 
     impl<M> MiddlewareError for EIP2771GasRelayerMiddlewareError<M>
@@ -130,16 +157,22 @@ mod middleware {
                 .get_nonce(transaction_signer_address)
                 .call()
                 .await
-                .expect("Failed to get nonce");
+                .map_err(|e| EIP2771GasRelayerMiddlewareError::FailedToGetNonce(e.to_string()))?;
 
             let typed_tx = tx.into();
 
-            let gas = self.inner().estimate_gas(&typed_tx, block).await.expect("Failed to estimate gas");
+            // Estimate the gas needed for the transaction.
+            let gas = self
+                .inner()
+                .estimate_gas(&typed_tx, block)
+                .await
+                .map_err(|e| {
+                    EIP2771GasRelayerMiddlewareError::FailedToEstimateGas(e.to_string())
+                })?;
 
             let typed_tx: Eip1559TransactionRequest = match typed_tx {
                 TypedTransaction::Eip1559(tx) => tx,
-                // TODO: Do not panic, return error instead.
-                _ => panic!("Unsupported transaction type"),
+                _ => return Err(EIP2771GasRelayerMiddlewareError::UnsupportedTransactionType),
             };
 
             // Get the signature over the typed data
@@ -149,7 +182,7 @@ mod middleware {
                 let alloy_domain = eip712_domain! {
                     name: "GSNv2 Forwarder",
                     version: "0.0.1",
-                    chain_id: 31337,
+                    chain_id: typed_tx.chain_id.ok_or(EIP2771GasRelayerMiddlewareError::MissingChainID)?.as_u64(),
                     verifying_contract: alloy::primitives::Address::new(self.forwarder_with_gas_signer.address().0),
                 };
 
@@ -159,19 +192,24 @@ mod middleware {
                         typed_tx
                             .to
                             .clone()
-                            .expect("To is not set")
+                            .ok_or(EIP2771GasRelayerMiddlewareError::MissingToAddress)?
                             .as_address()
-                            .expect("To is not an address")
+                            .ok_or(EIP2771GasRelayerMiddlewareError::ConversionError(
+                                "To is not an address".to_string(),
+                            ))?
                             .0,
                     ),
                     value: alloy::primitives::U256::from_limbs(
                         U256::from(typed_tx.value.unwrap_or(U256::from(0))).0,
                     ),
-                    // gas: alloy::primitives::U256::from(30000), // TODO: May wish to use dynamic
                     gas: alloy::primitives::U256::from_limbs(gas.0),
                     nonce: alloy::primitives::U256::from_limbs(U256::from(nonce).0),
                     data: alloy::primitives::Bytes::from(
-                        typed_tx.data.clone().expect("Data is not set").to_vec(),
+                        typed_tx
+                            .data
+                            .clone()
+                            .ok_or(EIP2771GasRelayerMiddlewareError::MissingData)?
+                            .to_vec(),
                     ),
                 };
 
@@ -181,7 +219,7 @@ mod middleware {
                 let alloy_sig = meta_signer
                     .sign_typed_data(&alloy_struct, &alloy_domain)
                     .await
-                    .expect("Failed to sign typed data");
+                    .map_err(|e| EIP2771GasRelayerMiddlewareError::SignerError(e.to_string()))?;
                 Bytes::from(alloy_sig.as_bytes())
             };
 
@@ -189,36 +227,41 @@ mod middleware {
                 from: transaction_signer_address,
                 to: typed_tx
                     .to
-                    .expect("To is not set")
+                    .ok_or(EIP2771GasRelayerMiddlewareError::MissingToAddress)?
                     .as_address()
-                    .expect("To is not an address")
+                    .ok_or(EIP2771GasRelayerMiddlewareError::ConversionError(
+                        "To is not an address".to_string(),
+                    ))?
                     .to_owned(),
                 value: typed_tx.value.unwrap_or(U256::from(0)),
                 gas,
                 nonce,
-                data: typed_tx.data.expect("Data is not set"),
+                data: typed_tx
+                    .data
+                    .ok_or(EIP2771GasRelayerMiddlewareError::MissingData)?,
             };
 
-            println!("Sending transaction to Forwarder");
             let fn_call = self
                 .forwarder_with_gas_signer
                 .execute(forwarder_execute_req, signature);
             let tx = fn_call.send().await;
-            println!("Transaction sent! Waiting for confirmation...");
+
             match tx {
                 Err(e) => {
                     match e
                         .decode_contract_revert::<abi::forwarder::ForwarderErrors>()
-                        .expect("Failed to decode contract revert")
-                    {
-                        abi::forwarder::ForwarderErrors::SignatureDoesNotMatch(_) => {
-                            println!("Signature does not match");
-                            todo!()
+                        .ok_or(EIP2771GasRelayerMiddlewareError::ConversionError(
+                            "Failed to decode contract revert".to_string(),
+                        ))? {
+                        abi::forwarder::ForwarderErrors::SignatureDoesNotMatch(chain_e) => {
+                            return Err(EIP2771GasRelayerMiddlewareError::ContractRevert(
+                                chain_e.to_string(),
+                            ));
                         }
                         _ => {
-                            println!("Unknown error");
-                            // TODO: Bubble up error
-                            todo!()
+                            return Err(EIP2771GasRelayerMiddlewareError::ContractRevert(
+                                e.to_string(),
+                            ));
                         }
                     }
                 }
