@@ -98,7 +98,7 @@ mod middleware {
         FailedToEstimateGas(String),
 
         #[error("Missing chain ID")]
-        MissingChainID,
+        MissingChainID(String),
 
         #[error("Missing to address")]
         MissingToAddress,
@@ -179,10 +179,22 @@ mod middleware {
             // Here, we use alloy to generate the typed data signature because there is a bug in ethers-rs that causes
             // the encoding for the data field (Bytes) to be incorrect.
             let signature = {
+                let chain_id = {
+                    match typed_tx.chain_id {
+                        Some(chain_id) => chain_id.as_u64(),
+                        None => {
+                            let chain_id = self.inner().get_chainid().await.map_err(|e| {
+                                EIP2771GasRelayerMiddlewareError::MissingChainID(e.to_string())
+                            })?;
+                            chain_id.as_u64()
+                        }
+                    }
+                };
+
                 let alloy_domain = eip712_domain! {
                     name: "GSNv2 Forwarder",
                     version: "0.0.1",
-                    chain_id: typed_tx.chain_id.ok_or(EIP2771GasRelayerMiddlewareError::MissingChainID)?.as_u64(),
+                    chain_id: chain_id,
                     verifying_contract: alloy::primitives::Address::new(self.forwarder_with_gas_signer.address().0),
                 };
 
@@ -315,8 +327,10 @@ async fn main() -> Result<()> {
     let forwarder_with_gas_signer = abi::forwarder::Forwarder::new(forwarder_address, gas_client);
 
     let meta_client = {
-        let meta_client = SignerMiddleware::new(provider.clone(), meta_wallet.clone());
         let meta_signer = meta_wallet.signer().clone();
+        let meta_client =
+            SignerMiddleware::new(provider.clone(), LocalWallet::from(meta_signer.clone()));
+
         Arc::new(EIP2771GasRelayerMiddleware::new(
             meta_client,
             meta_signer,
