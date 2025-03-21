@@ -5,7 +5,7 @@ use ethers::{
     signers::{LocalWallet, Signer as EthersSigner},
 };
 use eyre::Result;
-use middleware::EIP2771GasRelayerMiddleware;
+use middleware::{EIP2771GasRelayerMiddleware, EIP2771GasRelayerMiddlewareError};
 use std::sync::Arc;
 
 mod abi {
@@ -29,7 +29,9 @@ mod middleware {
     };
     use async_trait::async_trait;
     use ethers::{
+        contract::ContractError,
         core::k256::ecdsa::SigningKey,
+        middleware::{GasEscalatorMiddleware, TransformerMiddleware},
         providers::{Middleware, MiddlewareError, PendingTransaction},
         types::{
             transaction::eip2718::TypedTransaction, BlockId, Bytes, Eip1559TransactionRequest, U256,
@@ -91,11 +93,14 @@ mod middleware {
         #[error("{0}")]
         ContractRevert(String),
 
+        #[error("{0}")]
+        ContractError(ContractError<M>),
+
         #[error("Failed to get nonce")]
         FailedToGetNonce(String),
 
-        #[error("Failed to estimate gas")]
-        FailedToEstimateGas(String),
+        #[error("{0}")]
+        FailedToEstimateGas(M::Error),
 
         #[error("Missing chain ID")]
         MissingChainID(String),
@@ -126,6 +131,8 @@ mod middleware {
         fn as_inner(&self) -> Option<&Self::Inner> {
             match self {
                 EIP2771GasRelayerMiddlewareError::MiddlewareError(e) => Some(e),
+                EIP2771GasRelayerMiddlewareError::FailedToEstimateGas(e) => Some(e),
+                EIP2771GasRelayerMiddlewareError::ContractError(e) => e.as_middleware_error(),
                 _ => None,
             }
         }
@@ -166,9 +173,7 @@ mod middleware {
                 .inner()
                 .estimate_gas(&typed_tx, block)
                 .await
-                .map_err(|e| {
-                    EIP2771GasRelayerMiddlewareError::FailedToEstimateGas(e.to_string())
-                })?;
+                .map_err(|e| EIP2771GasRelayerMiddlewareError::FailedToEstimateGas(e))?;
 
             let typed_tx: Eip1559TransactionRequest = match typed_tx {
                 TypedTransaction::Eip1559(tx) => tx,
@@ -271,9 +276,7 @@ mod middleware {
                             ));
                         }
                         _ => {
-                            return Err(EIP2771GasRelayerMiddlewareError::ContractRevert(
-                                e.to_string(),
-                            ));
+                            return Err(EIP2771GasRelayerMiddlewareError::ContractError(e));
                         }
                     }
                 }
@@ -364,6 +367,25 @@ async fn main() -> Result<()> {
         meta_wallet.address(),
         meta_wallet_counter
     );
+
+    // Call the definitelyReverts function
+    let fn_call = counter_write.definitely_reverts();
+    let tx = fn_call.send().await;
+
+    match tx {
+        Err(e) => {
+            let middleware_error = e.as_middleware_error();
+            let middleware_error = middleware_error.unwrap();
+            let inner_error = match middleware_error {
+                EIP2771GasRelayerMiddlewareError::ContractError(e) => e,
+                _ => panic!("Expected contract error"),
+            };
+            println!("Inner error: {:?}", inner_error.as_revert());
+        }
+        Ok(tx) => {
+            println!("Tx: {:?}", tx);
+        }
+    }
 
     Ok(())
 }

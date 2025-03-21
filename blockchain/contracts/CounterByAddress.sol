@@ -7,6 +7,8 @@ contract CounterByAddress {
     mapping(address => uint256) public counter;
     address trustedForwarderAddress;
 
+    error DefinitelyReverts();
+
     function _msgSender() internal view returns (address sender) {
         if (msg.sender == trustedForwarderAddress && msg.data.length >= 20) {
             assembly {
@@ -19,6 +21,10 @@ contract CounterByAddress {
 
     function increment() public {
         counter[_msgSender()]++;
+    }
+
+    function definitelyReverts() public {
+        revert DefinitelyReverts();
     }
 
     function getCounter(address addr) public view returns (uint256) {

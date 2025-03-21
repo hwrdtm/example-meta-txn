@@ -47,5 +47,18 @@ async fn main() -> Result<()> {
     let counter = contract.get_counter(signer_address).call().await?;
     println!("Counter value for {}: {}", signer_address, counter);
 
+    // Call the definitelyReverts function
+    let fn_call = contract.definitely_reverts();
+    let tx = fn_call.send().await;
+
+    match tx {
+        Err(e) => {
+            println!("Error: {:?}", e);
+        }
+        Ok(tx) => {
+            println!("Tx: {:?}", tx);
+        }
+    }
+
     Ok(())
 }
